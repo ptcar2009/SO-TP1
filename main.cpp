@@ -28,47 +28,19 @@ typedef struct pers_data
 
 typedef struct monitor
 {
-    monitor()
-    {
-        // Initialize mutex
-        if (pthread_mutex_init(&mutex, NULL) != 0)
-        {
-            std::cout << "Mutex init failed" << std::endl;
-            return;
-        }
+    pers_data pers[9];
+    pthread_t threads[9];
+    pthread_mutex_t mutex;
+    int n_iterations;
 
-        for (int i = 0; i < NUM_PERSONAGENS; i++)
-        {
-            int threadError = pthread_create(&threads[i], NULL, go_to_work, &i);
-
-            if (threadError)
-            {
-                std::cout << "Unable to create thread, " << threadError << std::endl;
-                exit(-1);
-            }
-        }
-
-        for (int i = 0; i < NUM_PERSONAGENS - 1; i++)
-        {
-            pthread_join(threads[i], NULL);
-        }
-
-        pthread_mutex_destroy(&mutex);
-        pthread_exit(NULL);
-    }
-    static pers_data pers[9];
-    static pthread_t threads[9];
-    static pthread_mutex_t mutex;
-    static int n_iterations;
-
-    static void use_microwave(int);
-    static void release_microwave(int);
-    static void go_home();
-    static void activate_raj();
-    static void resolve_deadlock();
-    static int return_next_in_line(std::vector<int>, int);
-    static int check_nxt_couple(std::vector<int>, int, int);
-    static bool check_for_deadlock();
+    void use_microwave(int);
+    void release_microwave(int);
+    void go_home();
+    void activate_raj();
+    void resolve_deadlock();
+    int return_next_in_line(std::vector<int>, int);
+    int check_nxt_couple(std::vector<int>, int, int);
+    bool check_for_deadlock();
 
 } monitor;
 
@@ -131,13 +103,13 @@ int monitor::return_next_in_line(std::vector<int> line, int p_usingID)
     if (pers[p_usingID].acc)
     {
         // Homem usando o microondas
-        if (p_usingID < 3 && std::find(line.begin(), line.end(), (p_usingID + 5)) != line.end())
+        if (p_usingID < 3 && pers[p_usingID + 5].fila)
         {
             nxt_in_line =  (p_usingID + 5);
             return nxt_in_line;
         }
         // Mulher usando o microondas
-        else if (p_usingID > 4 && std::find(line.begin(), line.end(), (p_usingID - 5)) != line.end())
+        else if (p_usingID > 4 && pers[p_usingID - 5].fila)
         {
             nxt_in_line =  (p_usingID - 5);
             return nxt_in_line;
@@ -147,27 +119,27 @@ int monitor::return_next_in_line(std::vector<int> line, int p_usingID)
     {
         if (p_usingID == 0 || p_usingID == 5)
         {
-            nxt_in_line = check_nxt_couple(line, 0, 5);
+            nxt_in_line = check_nxt_couple(line, 1, 6);
             if (nxt_in_line != -1)
                 return nxt_in_line;
         }
         else if (p_usingID == 1 || p_usingID == 6)
         {
-            nxt_in_line = check_nxt_couple(line, 1, 6);
+            nxt_in_line = check_nxt_couple(line, 2, 7);
             if (nxt_in_line != -1)
                 return nxt_in_line;
         }
         else if (p_usingID == 2 || p_usingID == 7)
         {
-            nxt_in_line = check_nxt_couple(line, 2, 7);
+            nxt_in_line = check_nxt_couple(line, 0, 5);
             if (nxt_in_line != -1)
                 return nxt_in_line;
         }
 
         if (nxt_in_line == -1)
         {
-            bool stuart_in_line = std::find(line.begin(), line.end(), 3)!= line.end();
-            bool kripke_in_line = std::find(line.begin(), line.end(), 4)!= line.end();
+            bool stuart_in_line = pers[3].fila;
+            bool kripke_in_line = pers[4].fila;
             if (stuart_in_line)
                 return 3;
             else if (kripke_in_line)
@@ -350,4 +322,30 @@ void *go_to_work(void *tID)
 // Main
 int main(int argc, char **argv)
 {
+    monitor Monitor;
+    // Initialize mutex
+    if (pthread_mutex_init(&Monitor.mutex, NULL) != 0)
+    {
+        std::cout << "Mutex init failed" << std::endl;
+        return -1;
+    }
+
+    for (int i = 0; i < NUM_PERSONAGENS; i++)
+    {
+        int threadError = pthread_create(&Monitor.threads[i], NULL, go_to_work, &i);
+
+        if (threadError)
+        {
+            std::cout << "Unable to create thread, " << threadError << std::endl;
+            exit(-1);
+        }
+    }
+
+    for (int i = 0; i < NUM_PERSONAGENS - 1; i++)
+    {
+        pthread_join(Monitor.threads[i], NULL);
+    }
+
+    pthread_mutex_destroy(&Monitor.mutex);
+    pthread_exit(NULL);
 }
