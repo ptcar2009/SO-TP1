@@ -6,7 +6,10 @@
 #include <unistd.h>
 #include <random>
 
+#ifndef NUM_PERSONAGENS
 #define NUM_PERSONAGENS 9
+#endif
+#define MAX_PERSONAGENS 9
 #define HOME_WAIT_TIME 600000
 #define MICROWAVE_WAIT_TIME 1000000
 #define DEADLOCK_WAIT_TIME 5000000
@@ -38,8 +41,8 @@ typedef struct monitor
 {
     monitor(int _n_iterations) : n_iterations(_n_iterations)
     {
-        pthread_mutex_init(&mutex, NULL);
-        pthread_mutex_init(&mutex2, NULL);
+        pthread_mutex_init(&mutex_forninho, NULL);
+        pthread_mutex_init(&mutex_fila, NULL);
         pers[0] = pers_data("Sheldon", 0);
         pers[1] = pers_data("Howard", 1);
         pers[2] = pers_data("Leonard", 2);
@@ -50,12 +53,13 @@ typedef struct monitor
         pers[7] = pers_data("Penny", 7);
         pers[8] = pers_data("Raj", 8);
     }
-    pers_data pers[9];
-    pthread_t threads[9];
-    pthread_mutex_t mutex;
-    pthread_mutex_t mutex2;
+    int n_fila = 0;
+    pers_data pers[MAX_PERSONAGENS];
+    pthread_t threads[NUM_PERSONAGENS];
+    pthread_mutex_t mutex_forninho;
+    pthread_mutex_t mutex_fila;
     int n_iterations;
-
+    int current_front;
     void use_microwave(int);
     void release_microwave(int);
     void go_home();
@@ -71,13 +75,12 @@ typedef struct monitor
 // check_nxt_couple Retorna -1 se membros de nenhum casal estiverem na fila
 int monitor::check_nxt_couple(std::vector<int> line, int man, int wmn)
 {
-    lock(mutex2);
     int other_man = (man + 1) % 3;
     int other_wmn = other_man + 5;
-    bool man_in_line = std::find(line.begin(), line.end(), man) != line.end();
-    bool wmn_in_line = std::find(line.begin(), line.end(), wmn) != line.end();
-    bool other_man_in_line = std::find(line.begin(), line.end(), other_man) != line.end();
-    bool other_wmn_in_line = std::find(line.begin(), line.end(), other_wmn) != line.end();
+    bool man_in_line = pers[man].fila;
+    bool wmn_in_line = pers[wmn].fila;
+    bool other_man_in_line = pers[other_man].fila;
+    bool other_wmn_in_line = pers[other_wmn].fila;
     int ret = -1;
     // Casos abordados: 1) homem na fila (acompanhado ou não) e
     //                  2) outro homem na fila (acompanhado ou não)
@@ -116,7 +119,6 @@ int monitor::check_nxt_couple(std::vector<int> line, int man, int wmn)
     else if (other_wmn_in_line)
         ret = other_wmn;
 
-    unlock(mutex2);
     return ret;
 }
 
@@ -199,7 +201,7 @@ bool monitor::check_for_deadlock()
 void monitor::resolve_deadlock()
 {
     int nxt_manID = distr(gen);
-    lock(mutex2);
+
     if (pers[nxt_manID].fila)
     {
         std::cout << "Raj detectou um deadlock, liberando " << pers[nxt_manID].name << std::endl;
@@ -210,99 +212,30 @@ void monitor::resolve_deadlock()
         std::cout << "Raj detectou um deadlock, liberando " << pers[nxt_manID + 5].name << std::endl;
         pthread_cond_signal(&pers[nxt_manID + 5].cond);
     }
-    unlock(mutex2);
 }
 
 void monitor::use_microwave(int tID)
 {
-    lock(mutex2);
+    lock(mutex_fila);
     std::cout << pers[tID].name << " quer usar o forno." << std::endl;
     pers[tID].b4_partner = false;
-    bool has_to_stop = false;
-    if (tID < 3 && pers[tID + 5].fila)
-    {
-        pers[tID + 5].b4_partner = true;
-        pers[tID + 5].acc = pers[tID].acc = true;
-    }
-    else if (tID > 4 && tID < 8 && pers[tID - 5].fila)
-    {
-        pers[tID - 5].b4_partner = true;
-        pers[tID - 5].acc = pers[tID].acc = true;
-    }
-
     pers[tID].fila = true;
-
-    if (tID < 3)
+    n_fila++;
+    while (current_front != tID && !(n_fila == 1))
     {
-        int bp = (tID + 1) % 3;
-        int sp = (tID - 1 >= 0 ? tID - 1 : 2);
-        if (pers[tID].acc)
-        {
-            if ((pers[bp].acc && pers[bp].fila) || pers[bp + 5].acc && pers[bp + 5].fila)
-                has_to_stop = true;
-        }
-        else
-        {
-            if (((pers[sp].acc && pers[sp].fila) || (pers[sp + 5].acc && pers[sp + 5].fila)) || (pers[bp].fila || pers[bp + 5].fila))
-                has_to_stop = true;
-        }
+        pthread_cond_wait(&pers[tID].cond, &mutex_fila);
     }
-    else if (tID == 3)
-    {
-        bool cond = false;
-        for (int i = 0; i < 3; cond |= pers[i++].fila)
-            ;
-        for (int i = 5; i < 8; cond |= pers[i++].fila)
-            ;
-        if (cond)
-        {
-            has_to_stop = true;
-        }
-    }
-    else if (tID == 4)
-    {
-        bool cond = false;
-        for (int i = 0; i < 4; cond |= pers[i++].fila)
-            ;
-        for (int i = 5; i < 8; cond |= pers[i++].fila)
-            ;
-        if (cond)
-        {
-            has_to_stop = true;
-        }
-    }
-    else if (tID < 8)
-    {
-        int bp = (tID - 4) % 3 + 5;
-        int sp = (tID - 6 >= 0 ? tID - 1 : 2) + 5;
-        if (pers[tID].acc)
-        {
-            if ((pers[bp].acc && pers[bp].fila) || pers[bp - 5].acc && pers[bp - 5].fila)
-                has_to_stop = true;
-        }
-        else
-        {
-            if (((pers[sp].acc && pers[sp].fila) || (pers[sp - 5].acc && pers[sp - 5].fila)) || (pers[bp].fila || pers[bp - 5].fila))
-
-                has_to_stop = true;
-        }
-    }
-    unlock(mutex2);
-    if (has_to_stop)
-    {
-        pthread_cond_wait(&pers[tID].cond, &mutex);
-    }
-
-    pthread_mutex_lock(&mutex);
+    unlock(mutex_fila);
+    lock(mutex_forninho);
     // Incrementa contador de usos do Raj
     std::cout << pers[tID].name << " começou a esquentar algo." << std::endl;
     pers[8].count_forno += 1;
     usleep(MICROWAVE_WAIT_TIME);
+
 }
 
 void monitor::release_microwave(int tID)
 {
-    lock(mutex2);
     std::vector<int> pers_in_line;
     int next_persID;
     for (int i = 0; i < NUM_PERSONAGENS - 1; i++)
@@ -316,13 +249,16 @@ void monitor::release_microwave(int tID)
         // Do something
     }
 
-    next_persID = monitor::return_next_in_line(pers_in_line, tID);
-
+    lock(mutex_fila);
     std::cout << pers[tID].name << " vai comer." << std::endl;
+    next_persID = monitor::return_next_in_line(pers_in_line, tID);
+    current_front = next_persID;
     pers[tID].acc = false;
     pers[tID].fila = false;
+    n_fila--;
     pthread_cond_signal(&pers[next_persID].cond);
-    unlock(mutex2);
+    unlock(mutex_fila);
+    unlock(mutex_forninho);
 }
 
 void monitor::go_home()
@@ -346,7 +282,7 @@ monitor *Monitor;
 
 void *go_to_work(void *tID)
 {
-    int ID = *((int *)tID);
+    long ID = long(tID);
     if (ID != 8)
     {
         for (int i = 0; i < Monitor->n_iterations; i++)
@@ -371,10 +307,10 @@ int main(int argc, char **argv)
 
     Monitor = new monitor(nIter);
 
-    for (int i = 0; i < NUM_PERSONAGENS; i++)
+    for (long i = 0; i < NUM_PERSONAGENS; i++)
     {
-        int params[] = {i};
-        int threadError = pthread_create(&Monitor->threads[i], NULL, go_to_work, params);
+        //int params[] = {i};
+        int threadError = pthread_create(&Monitor->threads[i], NULL, go_to_work, (void *)i);
 
         if (threadError)
         {
@@ -388,6 +324,7 @@ int main(int argc, char **argv)
         pthread_join(Monitor->threads[i], NULL);
     }
 
-    pthread_mutex_destroy(&Monitor->mutex);
+    pthread_mutex_destroy(&Monitor->mutex_forninho);
+    pthread_mutex_destroy(&Monitor->mutex_fila);
     pthread_exit(NULL);
 }
