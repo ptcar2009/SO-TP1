@@ -65,15 +65,15 @@ typedef struct monitor
     void go_home();
     void activate_raj();
     void resolve_deadlock();
-    int return_next_in_line(std::vector<int>, int);
-    int check_nxt_couple(std::vector<int>, int, int);
+    int return_next_in_line(int);
+    int check_nxt_couple(int, int);
     bool check_for_deadlock();
 
 } monitor;
 
 // check_nxt_couple Procura por próximo membro apto de um dos casais restantes
 // check_nxt_couple Retorna -1 se membros de nenhum casal estiverem na fila
-int monitor::check_nxt_couple(std::vector<int> line, int man, int wmn)
+int monitor::check_nxt_couple(int man, int wmn)
 {
     int other_man = (man + 1) % 3;
     int other_wmn = other_man + 5;
@@ -124,7 +124,7 @@ int monitor::check_nxt_couple(std::vector<int> line, int man, int wmn)
 
 // return_next_in_line Retorna ID da próxima pessoa que deve utilizar o forno
 // return_next_in_line Retorna -1 caso nenhuma pessoa esteja apta
-int monitor::return_next_in_line(std::vector<int> line, int p_usingID)
+int monitor::return_next_in_line(int p_usingID)
 {
     int nxt_in_line = -1;
     // Está acompanhadx dx parceirx e parceirx está na fila
@@ -147,19 +147,19 @@ int monitor::return_next_in_line(std::vector<int> line, int p_usingID)
     {
         if (p_usingID == 0 || p_usingID == 5)
         {
-            nxt_in_line = check_nxt_couple(line, 1, 6);
+            nxt_in_line = check_nxt_couple(1, 6);
             if (nxt_in_line != -1)
                 return nxt_in_line;
         }
         else if (p_usingID == 1 || p_usingID == 6)
         {
-            nxt_in_line = check_nxt_couple(line, 2, 7);
+            nxt_in_line = check_nxt_couple(2, 7);
             if (nxt_in_line != -1)
                 return nxt_in_line;
         }
         else if (p_usingID == 2 || p_usingID == 7)
         {
-            nxt_in_line = check_nxt_couple(line, 0, 5);
+            nxt_in_line = check_nxt_couple(0, 5);
             if (nxt_in_line != -1)
                 return nxt_in_line;
         }
@@ -168,10 +168,12 @@ int monitor::return_next_in_line(std::vector<int> line, int p_usingID)
         {
             bool stuart_in_line = pers[3].fila;
             bool kripke_in_line = pers[4].fila;
-            if (stuart_in_line)
+            if (stuart_in_line){
                 return 3;
-            else if (kripke_in_line)
+            }
+            if (kripke_in_line){
                 return 4;
+            }
         }
     }
     return -1;
@@ -201,37 +203,50 @@ bool monitor::check_for_deadlock()
 void monitor::resolve_deadlock()
 {
     int nxt_manID = distr(gen);
+    int chosen_persID;
 
     if (pers[nxt_manID].fila)
-    {
-        std::cout << "Raj detectou um deadlock, liberando " << pers[nxt_manID].name << std::endl;
-        pthread_cond_signal(&pers[nxt_manID].cond);
-    }
+        chosen_persID = nxt_manID;
     else
-    {
-        std::cout << "Raj detectou um deadlock, liberando " << pers[nxt_manID + 5].name << std::endl;
-        pthread_cond_signal(&pers[nxt_manID + 5].cond);
-    }
+        chosen_persID = nxt_manID + 5;
+    
+    std::cout << "Raj detectou um deadlock, liberando " << pers[chosen_persID].name << std::endl;
+    pthread_cond_signal(&pers[chosen_persID].cond);
+    unlock(mutex_fila);
+    unlock(mutex_forninho);
 }
 
 void monitor::use_microwave(int tID)
 {
     lock(mutex_fila);
     std::cout << pers[tID].name << " quer usar o forno." << std::endl;
-    pers[tID].b4_partner = false;
     pers[tID].fila = true;
     n_fila++;
+
+    if (tID < 3) {
+        if(!pers[tID + 5].fila)
+            pers[tID].b4_partner = true;
+        else
+            pers[tID].acc = pers[tID + 5].acc = true;
+    }
+    else if (tID > 4) {
+        if(!pers[tID - 5].fila)
+            pers[tID].b4_partner = true;
+        else
+            pers[tID].acc = pers[tID - 5].acc = true;
+    }
+
     while (current_front != tID && !(n_fila == 1))
     {
         pthread_cond_wait(&pers[tID].cond, &mutex_fila);
     }
     unlock(mutex_fila);
     lock(mutex_forninho);
-    // Incrementa contador de usos do Raj
     std::cout << pers[tID].name << " começou a esquentar algo." << std::endl;
+    pers[tID].fila = false;
+    // Incrementa contador de usos do Raj
     pers[8].count_forno += 1;
     usleep(MICROWAVE_WAIT_TIME);
-
 }
 
 void monitor::release_microwave(int tID)
@@ -251,10 +266,10 @@ void monitor::release_microwave(int tID)
 
     lock(mutex_fila);
     std::cout << pers[tID].name << " vai comer." << std::endl;
-    next_persID = monitor::return_next_in_line(pers_in_line, tID);
+    next_persID = monitor::return_next_in_line(tID);
     current_front = next_persID;
     pers[tID].acc = false;
-    pers[tID].fila = false;
+    pers[tID].b4_partner = false;
     n_fila--;
     pthread_cond_signal(&pers[next_persID].cond);
     unlock(mutex_fila);
