@@ -1,6 +1,6 @@
 #include <monitor.hpp>
 #include <iostream>
-Monitor* monitor;
+Monitor *monitor;
 void *go_to_work(void *tID)
 {
     long ID = long(tID);
@@ -25,7 +25,13 @@ void *go_to_work(void *tID)
 // Main
 int main(int argc, char **argv)
 {
+#ifndef DEBUG
     int nIter = atoi(argv[1]);
+#endif
+
+#ifdef DEBUG
+    int nIter = 3;
+#endif
     monitor = new Monitor(nIter);
     monitor->run(go_to_work);
     delete (monitor);
