@@ -123,6 +123,7 @@ int Monitor::venn()
         nxt_in_line = -2;
     return nxt_in_line;
 }
+
 void Monitor::resolve_deadlock()
 {
     int nxt_manID = distr(gen);
@@ -136,6 +137,7 @@ void Monitor::resolve_deadlock()
 
     std::cout << "Raj detectou um deadlock, liberando " << pers[nxt_manID].name << std::endl;
     deadlock = false;
+    
     release(nxt_manID);
 }
 
@@ -207,13 +209,11 @@ void Monitor::go_home()
     usleep(HOME_WAIT_TIME);
 }
 
-void Monitor::run(void *(*thread_f)(void *))
+void Monitor::run(void *(*function)(void *))
 {
     for (long i = 0; i < NUM_PERSONAGENS; i++)
     {
-        //int params[] = {i};
-        int threadError = pthread_create(&this->threads[i], NULL, thread_f, (void *)i);
-        // sleep(1);
+        int threadError = pthread_create(&this->threads[i], NULL, function, (void *)i);
         if (threadError)
         {
             std::cout << "Unable to create thread, " << threadError << std::endl;
@@ -222,9 +222,7 @@ void Monitor::run(void *(*thread_f)(void *))
     }
 
     for (int i = 0; i < NUM_PERSONAGENS; i++)
-    {
         pthread_join(this->threads[i], NULL);
-    }
 }
 
 void Monitor::activate_raj()
